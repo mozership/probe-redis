@@ -6,6 +6,8 @@ Probe downloads it the first time a workflow uses it. It needs Probe v1.21.0 or 
 
 ```yaml
 name: Session
+actions:
+  redis: github.com/mozership/probe-redis@<commit SHA>
 jobs:
 - name: session
   steps:
@@ -21,7 +23,7 @@ jobs:
       session: res.body.session_id
 
   - name: The session is in the store, and expires
-    uses: github.com/mozership/probe-redis@<commit SHA>
+    uses: redis
     with:
       url: redis://cache.example.com:6379/0
       password: "{{vars.redis_password}}"
@@ -31,7 +33,9 @@ jobs:
     test: status == 0 && res.results[0] == "ada" && res.results[1] > 0
 ```
 
-Probe only takes a full 40-character commit SHA. The notes of each [release](https://github.com/mozership/probe-redis/releases) start with the `uses` line to copy.
+The workflow gives the action a name once, under `actions`, and its steps use the name. Probe only takes a full 40-character commit SHA there. The notes of each [release](https://github.com/mozership/probe-redis/releases) start with the action and its commit to copy.
+
+`actions` needs Probe v1.24.0 or later. With an earlier one, write the action in full in each `uses`, as `uses: github.com/mozership/probe-redis@<commit SHA>`.
 
 Every step opens a new connection, runs its `commands` in order, and closes it, so what belongs to a connection does not carry over to the next step: put a transaction, or a `HELLO 3` and the commands that follow it, in one step.
 
@@ -110,7 +114,7 @@ Once the server is connected to, what it answers is a result, so a test can asse
 
 ```yaml
 - name: The key is not a list
-  uses: github.com/mozership/probe-redis@<commit SHA>
+  uses: redis
   with:
     url: redis://localhost:6379
     commands:
