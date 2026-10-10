@@ -74,7 +74,9 @@ These commands are never run:
 
 ### Passwords
 
-Give a password in `password` rather than in the URL. Probe hides the value of a `password` parameter wherever it shows a step, in its output, its reports and its logs. It does not know a password inside `url`: the action leaves it out of `req.url`, of its errors and of its own log, but the verbose log of Probe (`-v`) shows the parameters of a step as they were written, the URL included, unless the password is one of the workflow's `secrets`.
+Probe hides the value of a `password` parameter wherever it shows a step, in its output, its reports and its logs. The action leaves a password inside `url` out of `req.url`, of its errors and of its own log, and Probe v1.24.0 and later shows it as `<redacted>` wherever it shows the parameters of a step, with the rest of the URL as it was written.
+
+With an earlier Probe, give the password in `password` rather than in the URL: its verbose log (`-v`) shows the URL as it was written, unless the password is one of the workflow's `secrets`.
 
 ## Result
 

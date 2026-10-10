@@ -6,17 +6,20 @@
 #   probe --allow-host cache.example.com e2e/guard.yml
 name: probe-redis under a guard
 
+actions:
+  redis: ./action
+
 vars:
   url: "{{REDIS_URL ?? 'redis://localhost:6379'}}"
 
 jobs:
 - name: Reads and a write
   defaults:
-    ./action:
+    redis:
       url: "{{vars.url}}"
   steps:
   - name: Reads are run
-    uses: ./action
+    uses: redis
     with:
       commands:
       - PING
@@ -26,7 +29,7 @@ jobs:
     test: res.results[0] == "PONG" && res.results[1] == nil
 
   - name: A write is refused
-    uses: ./action
+    uses: redis
     with:
       commands:
       - [GET, "probe-redis-e2e:guard"]

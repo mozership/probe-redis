@@ -9,6 +9,11 @@
 # a prefix of their own in databases 0 and 1, and remove what they wrote.
 name: probe-redis against a server
 
+# The action as it was just built, by the name a workflow would give a
+# released one.
+actions:
+  redis: ./action
+
 vars:
   url: "{{REDIS_URL ?? 'redis://localhost:6379'}}"
   # Marks what one run writes, so that runs against the same server do not
@@ -19,11 +24,11 @@ jobs:
 - name: Commands and their replies
   id: commands
   defaults:
-    ./action:
+    redis:
       url: "{{vars.url}}"
   steps:
   - name: A string, written as a list and read as a string
-    uses: ./action
+    uses: redis
     with:
       commands:
       - [SET, "{{vars.prefix}}:greeting", hello world, EX, 300]
@@ -41,7 +46,7 @@ jobs:
       req.commands[1] == ["GET", vars.prefix + ":greeting"]
 
   - name: A number is sent as its digits
-    uses: ./action
+    uses: redis
     with:
       commands:
       - [SET, "{{vars.prefix}}:count", 41]
@@ -50,7 +55,7 @@ jobs:
     test: status == 0 && res.results[1] == 42 && res.results[2] == "42.5"
 
   - name: A hash, a list and a sorted set
-    uses: ./action
+    uses: redis
     with:
       commands:
       - [HSET, "{{vars.prefix}}:user", name, Ada, age, 36]
@@ -72,7 +77,7 @@ jobs:
   # HELLO 3 has the server answer in RESP3 for the rest of the step, in
   # which a hash is a map.
   - name: A hash as an object, with RESP3
-    uses: ./action
+    uses: redis
     with:
       commands:
       - HELLO 3
@@ -85,7 +90,7 @@ jobs:
       res.results[2] == nil
 
   - name: A transaction
-    uses: ./action
+    uses: redis
     with:
       commands:
       - MULTI
@@ -98,7 +103,7 @@ jobs:
       res.results[3] == [1, 2]
 
   - name: A value with spaces, quotes and a line break
-    uses: ./action
+    uses: redis
     with:
       commands:
       - 'SET {{vars.prefix}}:text "say \"hi\"\nthen leave"'
@@ -108,7 +113,7 @@ jobs:
 
   # The key is written in database 1, where database 0 does not see it.
   - name: The database of the URL
-    uses: ./action
+    uses: redis
     with:
       url: "{{vars.url}}/1"
       commands:
@@ -117,7 +122,7 @@ jobs:
     test: status == 0 && res.results[1] == 1 && req.url endsWith "/1"
 
   - name: Database 0 does not have it
-    uses: ./action
+    uses: redis
     with:
       commands:
       - [EXISTS, "{{vars.prefix}}:in-one"]
@@ -126,12 +131,12 @@ jobs:
 - name: Errors the server answers with
   needs: [commands]
   defaults:
-    ./action:
+    redis:
       url: "{{vars.url}}"
   steps:
   # The command after the one that failed is still run.
   - name: A command on a key of another type
-    uses: ./action
+    uses: redis
     with:
       commands:
       - [SET, "{{vars.prefix}}:plain", v, EX, 300]
@@ -147,7 +152,7 @@ jobs:
       res.errors[0].message startsWith "WRONGTYPE "
 
   - name: A command the server does not have
-    uses: ./action
+    uses: redis
     with:
       commands:
       - NOSUCHCOMMAND 1 2
@@ -158,7 +163,7 @@ jobs:
   # The server answered, so this is a result. The commands are not sent, as
   # they would run as someone else.
   - name: A user the server does not know
-    uses: ./action
+    uses: redis
     with:
       username: probe-redis-nobody
       password: wrong
@@ -171,7 +176,7 @@ jobs:
       res.errors[0].code == "WRONGPASS"
 
   - name: Nothing was written by the step that was not let in
-    uses: ./action
+    uses: redis
     with:
       commands:
       - [EXISTS, "{{vars.prefix}}:never"]
@@ -180,11 +185,11 @@ jobs:
 - name: Remove what was written
   needs: [commands]
   defaults:
-    ./action:
+    redis:
       url: "{{vars.url}}"
   steps:
   - name: In database 0
-    uses: ./action
+    uses: redis
     with:
       commands:
       - - DEL
@@ -198,7 +203,7 @@ jobs:
     test: status == 0 && res.results[0] == 7
 
   - name: In database 1
-    uses: ./action
+    uses: redis
     with:
       url: "{{vars.url}}/1"
       commands:
