@@ -1,0 +1,75 @@
+name: Test
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  # The tests above answer from a stub. This one runs the action through
+  # Probe against Redis and against Valkey, servers none of it was written
+  # against.
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        server:
+          - redis:8
+          - valkey/valkey:8
+    services:
+      server:
+        image: ${{ matrix.server }}
+        ports:
+          - 6379:6379
+        # The image of Valkey has redis-cli as another name of valkey-cli.
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version-file: go.mod
+      # Probe resolves the action before the first job of a workflow, so it
+      # is built first.
+      - run: go build -o e2e/action/probe-redis .
+      # The probe the e2e workflows run. The action checks it against the
+      # digest of its release and adds it to PATH.
+      - name: Install Probe
+        uses: mozership/probe-action@831b8b6c6aa0c8a61aa75b58f36a08da5c579e83 # v1.3.0
+        with:
+          install-only: true
+          version: v1.23.0
+      - run: probe check e2e/workflow.yml
+      - run: probe e2e/workflow.yml
+      # The reads of guard.yml pass and its write is refused, which ends the
+      # run with exit status 2.
+      - name: A write is refused under --read-only
+        run: |
+          status=0
+          probe --read-only --allow-host localhost e2e/guard.yml > "$RUNNER_TEMP/read-only.txt" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/read-only.txt"
+          test "$status" -eq 2
+          grep -F '✓  Reads are run' "$RUNNER_TEMP/read-only.txt"
+          grep -F 'refused: the run is read-only, and commands[1] SET is not a command known to only read' "$RUNNER_TEMP/read-only.txt"
+      - name: A host the run does not allow is refused
+        run: |
+          status=0
+          probe --allow-host cache.example.com e2e/guard.yml > "$RUNNER_TEMP/allow-host.txt" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/allow-host.txt"
+          test "$status" -eq 2
+          grep -F 'refused: the host localhost:6379 is not one the run allows' "$RUNNER_TEMP/allow-host.txt"

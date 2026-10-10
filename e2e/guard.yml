@@ -1,0 +1,34 @@
+# What probe-redis does under a guard. Its last step writes, so a run under
+# --read-only ends there with exit status 2, and a run under an --allow-host
+# that does not name the server ends at its first step:
+#
+#   probe --read-only --allow-host localhost e2e/guard.yml
+#   probe --allow-host cache.example.com e2e/guard.yml
+name: probe-redis under a guard
+
+vars:
+  url: "{{REDIS_URL ?? 'redis://localhost:6379'}}"
+
+jobs:
+- name: Reads and a write
+  defaults:
+    ./action:
+      url: "{{vars.url}}"
+  steps:
+  - name: Reads are run
+    uses: ./action
+    with:
+      commands:
+      - PING
+      - [GET, "probe-redis-e2e:guard"]
+      - [SCAN, 0, COUNT, 1]
+      - [OBJECT, ENCODING, "probe-redis-e2e:guard"]
+    test: res.results[0] == "PONG" && res.results[1] == nil
+
+  - name: A write is refused
+    uses: ./action
+    with:
+      commands:
+      - [GET, "probe-redis-e2e:guard"]
+      - [SET, "probe-redis-e2e:guard", written]
+    test: status == 0

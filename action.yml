@@ -1,0 +1,7 @@
+name: redis
+description: Run commands on a Redis or Valkey server
+guard: [read-only, allow-host]
+params: [url, username, password, commands, timeout, insecure_skip_tls]
+runs:
+  using: binary
+  url: https://github.com/mozership/probe-redis/releases/download/v0.0.0/probe-redis_{os}_{arch}

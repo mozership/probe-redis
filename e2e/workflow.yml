@@ -1,0 +1,206 @@
+# The end-to-end tests: probe-redis run through Probe against a real server.
+# Run it from the repository root, with a server listening and the action
+# built first, as Probe resolves it before the first job:
+#
+#   docker run -d --rm -p 6379:6379 redis:8
+#   go build -o e2e/action/probe-redis . && probe e2e/workflow.yml
+#
+# REDIS_URL names another server, such as a Valkey one. The tests write under
+# a prefix of their own in databases 0 and 1, and remove what they wrote.
+name: probe-redis against a server
+
+vars:
+  url: "{{REDIS_URL ?? 'redis://localhost:6379'}}"
+  # Marks what one run writes, so that runs against the same server do not
+  # find each other's keys.
+  prefix: "probe-redis-e2e:{{random_str(12)}}"
+
+jobs:
+- name: Commands and their replies
+  id: commands
+  defaults:
+    ./action:
+      url: "{{vars.url}}"
+  steps:
+  - name: A string, written as a list and read as a string
+    uses: ./action
+    with:
+      commands:
+      - [SET, "{{vars.prefix}}:greeting", hello world, EX, 300]
+      - 'GET {{vars.prefix}}:greeting'
+      - 'GET "{{vars.prefix}}:missing"'
+      - [TTL, "{{vars.prefix}}:greeting"]
+      - [STRLEN, "{{vars.prefix}}:greeting"]
+    test: |
+      status == 0 && len(res.errors) == 0 &&
+      res.results[0] == "OK" &&
+      res.results[1] == "hello world" &&
+      res.results[2] == nil &&
+      res.results[3] > 0 && res.results[3] <= 300 &&
+      res.results[4] == 11 &&
+      req.commands[1] == ["GET", vars.prefix + ":greeting"]
+
+  - name: A number is sent as its digits
+    uses: ./action
+    with:
+      commands:
+      - [SET, "{{vars.prefix}}:count", 41]
+      - [INCR, "{{vars.prefix}}:count"]
+      - [INCRBYFLOAT, "{{vars.prefix}}:count", 0.5]
+    test: status == 0 && res.results[1] == 42 && res.results[2] == "42.5"
+
+  - name: A hash, a list and a sorted set
+    uses: ./action
+    with:
+      commands:
+      - [HSET, "{{vars.prefix}}:user", name, Ada, age, 36]
+      - [HGETALL, "{{vars.prefix}}:user"]
+      - [RPUSH, "{{vars.prefix}}:queue", a, b, c]
+      - [LRANGE, "{{vars.prefix}}:queue", 0, -1]
+      - [ZADD, "{{vars.prefix}}:scores", 1, one, 2, two]
+      - [ZRANGE, "{{vars.prefix}}:scores", 0, -1]
+      - [TYPE, "{{vars.prefix}}:scores"]
+    test: |
+      status == 0 &&
+      res.results[0] == 2 &&
+      res.results[1] == ["name", "Ada", "age", "36"] &&
+      res.results[2] == 3 &&
+      res.results[3] == ["a", "b", "c"] &&
+      res.results[5] == ["one", "two"] &&
+      res.results[6] == "zset"
+
+  # HELLO 3 has the server answer in RESP3 for the rest of the step, in
+  # which a hash is a map.
+  - name: A hash as an object, with RESP3
+    uses: ./action
+    with:
+      commands:
+      - HELLO 3
+      - [HGETALL, "{{vars.prefix}}:user"]
+      - [GET, "{{vars.prefix}}:missing"]
+    test: |
+      status == 0 &&
+      res.results[0].proto == 3 &&
+      res.results[1].name == "Ada" && res.results[1].age == "36" &&
+      res.results[2] == nil
+
+  - name: A transaction
+    uses: ./action
+    with:
+      commands:
+      - MULTI
+      - [INCR, "{{vars.prefix}}:tx"]
+      - [INCR, "{{vars.prefix}}:tx"]
+      - EXEC
+    test: |
+      status == 0 &&
+      res.results[1] == "QUEUED" &&
+      res.results[3] == [1, 2]
+
+  - name: A value with spaces, quotes and a line break
+    uses: ./action
+    with:
+      commands:
+      - 'SET {{vars.prefix}}:text "say \"hi\"\nthen leave"'
+      - [GET, "{{vars.prefix}}:text"]
+    test: |
+      status == 0 && res.results[1] == "say \"hi\"\nthen leave"
+
+  # The key is written in database 1, where database 0 does not see it.
+  - name: The database of the URL
+    uses: ./action
+    with:
+      url: "{{vars.url}}/1"
+      commands:
+      - [SET, "{{vars.prefix}}:in-one", "1", EX, 300]
+      - [EXISTS, "{{vars.prefix}}:in-one"]
+    test: status == 0 && res.results[1] == 1 && req.url endsWith "/1"
+
+  - name: Database 0 does not have it
+    uses: ./action
+    with:
+      commands:
+      - [EXISTS, "{{vars.prefix}}:in-one"]
+    test: status == 0 && res.results[0] == 0
+
+- name: Errors the server answers with
+  needs: [commands]
+  defaults:
+    ./action:
+      url: "{{vars.url}}"
+  steps:
+  # The command after the one that failed is still run.
+  - name: A command on a key of another type
+    uses: ./action
+    with:
+      commands:
+      - [SET, "{{vars.prefix}}:plain", v, EX, 300]
+      - [LPUSH, "{{vars.prefix}}:plain", x]
+      - [GET, "{{vars.prefix}}:plain"]
+    test: |
+      status == 1 &&
+      res.results == ["OK", nil, "v"] &&
+      len(res.errors) == 1 &&
+      res.errors[0].index == 1 &&
+      res.errors[0].command == "LPUSH" &&
+      res.errors[0].code == "WRONGTYPE" &&
+      res.errors[0].message startsWith "WRONGTYPE "
+
+  - name: A command the server does not have
+    uses: ./action
+    with:
+      commands:
+      - NOSUCHCOMMAND 1 2
+    test: |
+      status == 1 && res.results == [nil] &&
+      res.errors[0].index == 0 && res.errors[0].code == "ERR"
+
+  # The server answered, so this is a result. The commands are not sent, as
+  # they would run as someone else.
+  - name: A user the server does not know
+    uses: ./action
+    with:
+      username: probe-redis-nobody
+      password: wrong
+      commands:
+      - [SET, "{{vars.prefix}}:never", written]
+    test: |
+      status == 1 && len(res.results) == 0 &&
+      res.errors[0].index == -1 &&
+      res.errors[0].command == "AUTH" &&
+      res.errors[0].code == "WRONGPASS"
+
+  - name: Nothing was written by the step that was not let in
+    uses: ./action
+    with:
+      commands:
+      - [EXISTS, "{{vars.prefix}}:never"]
+    test: status == 0 && res.results[0] == 0
+
+- name: Remove what was written
+  needs: [commands]
+  defaults:
+    ./action:
+      url: "{{vars.url}}"
+  steps:
+  - name: In database 0
+    uses: ./action
+    with:
+      commands:
+      - - DEL
+        - "{{vars.prefix}}:greeting"
+        - "{{vars.prefix}}:count"
+        - "{{vars.prefix}}:user"
+        - "{{vars.prefix}}:queue"
+        - "{{vars.prefix}}:scores"
+        - "{{vars.prefix}}:tx"
+        - "{{vars.prefix}}:text"
+    test: status == 0 && res.results[0] == 7
+
+  - name: In database 1
+    uses: ./action
+    with:
+      url: "{{vars.url}}/1"
+      commands:
+      - [DEL, "{{vars.prefix}}:in-one"]
+    test: status == 0 && res.results[0] == 1

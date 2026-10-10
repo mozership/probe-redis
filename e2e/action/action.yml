@@ -1,0 +1,12 @@
+# probe-redis built from this checkout, for the workflows of e2e. Probe
+# resolves an action before the first job starts, so the executable is built
+# before probe runs:
+#
+#   go build -o e2e/action/probe-redis . && probe e2e/workflow.yml
+name: redis
+description: Run commands on a Redis or Valkey server
+guard: [read-only, allow-host]
+params: [url, username, password, commands, timeout, insecure_skip_tls]
+runs:
+  using: binary
+  path: probe-redis
