@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/linyows/probe/actionref"
-	"github.com/linyows/probe/actionrpc"
+	"github.com/mozership/probe/actionref"
+	"github.com/mozership/probe/actionrpc"
 )
 
 // recorded is what a test server saw: the commands sent to it, and how many
