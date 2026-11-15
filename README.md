@@ -2,12 +2,15 @@
 
 A [Probe](https://github.com/mozership/probe) action that runs commands on a Redis or Valkey server and returns their replies, so a workflow can check what an API left in a cache or a session store.
 
-Probe downloads it the first time a workflow uses it. It needs Probe v1.21.0 or later, which reads the guard and the params the action declares in `action.yml`.
+It is an [external action](https://probe.linyo.ws/guide/concepts/actions#external-actions). Probe downloads it the first time a workflow uses it, and runs the executable whose SHA-256 the `action.yml` at the pinned commit names. It needs Probe v1.21.0 or later, which reads the guard and the params the action declares in `action.yml`.
 
 ```yaml
 name: Session
 actions:
   redis: github.com/mozership/probe-redis@<commit SHA>
+vars:
+  password: "{{PASSWORD}}"
+  redis_password: "{{REDIS_PASSWORD}}"
 jobs:
 - name: session
   steps:
@@ -50,7 +53,7 @@ Every step opens a new connection, runs its `commands` in order, and closes it, 
 | `timeout` | Duration | No | `30s` | Time limit for the whole step, from connecting to the last reply, as `10s` or a number of seconds. `0` removes it |
 | `insecure_skip_tls` | Boolean | No | `false` | Accept the certificate of a `rediss` server without verifying it. The connection is still encrypted, but no longer protected against an impostor, so use it only for servers you control |
 
-A key of `with` that is not one of these fails the step before anything is sent, and `probe check` reports it with its line.
+A key of `with` that is not one of these fails the step before anything is sent. Its `action.yml` declares them as `params`, so `probe check` reports such a key with its line.
 
 When a username or a password is given, in the URL or in `with`, the action authenticates with `AUTH` before the commands, and then selects the database of the URL, if it names one.
 
@@ -101,7 +104,18 @@ A reply becomes a plain value.
 
 A string that is not UTF-8 cannot be a string of a result, so it becomes an object with its bytes in base64, as `{"base64": "//4="}`. An integer beyond 2<sup>53</sup> loses its last digits on the way to a test, as any number does there.
 
-Without `HELLO 3` the server answers in RESP2, in which a map is a list of keys and values in turn: `HGETALL` of a hash with `name` and `age` is `["name", "Ada", "age", "36"]`. Put `HELLO 3` before it in the same step to have it as `{"name": "Ada", "age": "36"}`.
+Without `HELLO 3` the server answers in RESP2, in which a map is a list of keys and values in turn: `HGETALL` of a hash with `name` and `age` is `["name", "Ada", "age", "36"]`. Put `HELLO 3` before it in the same step to have it as `{"name": "Ada", "age": "36"}`:
+
+```yaml
+- name: A hash as an object
+  uses: redis
+  with:
+    url: redis://localhost:6379
+    commands:
+    - HELLO 3
+    - [HGETALL, "user:1"]
+  test: res.results[1].name == "Ada"
+```
 
 Each entry of `res.errors` has these fields.
 
@@ -112,7 +126,7 @@ Each entry of `res.errors` has these fields.
 | `code` | String | The first word of the error, which names its kind: `ERR`, `WRONGTYPE`, `NOAUTH`, `WRONGPASS`, `NOPERM`, `MOVED` and so on |
 | `message` | String | The whole error, as the server sent it |
 
-Once the server is connected to, what it answers is a result, so a test can assert on an error:
+Once the server is connected to, what it answers is a result, so a test can assert on an error. An error does not stop the step: the commands after it are run, and their replies are in `res.results` at their own index:
 
 ```yaml
 - name: The key is not a list
@@ -120,11 +134,16 @@ Once the server is connected to, what it answers is a result, so a test can asse
   with:
     url: redis://localhost:6379
     commands:
+    - [SET, greeting, hello]
     - [LPUSH, greeting, x]
-  test: status == 1 && res.errors[0].code == "WRONGTYPE"
+    - [GET, greeting]
+  test: |
+    status == 1 &&
+    res.results == ["OK", nil, "hello"] &&
+    res.errors[0].index == 1 && res.errors[0].code == "WRONGTYPE"
 ```
 
-An error does not stop the step: the commands after it are run, and their replies are in `res.results` at their own index. An error inside a list, as `EXEC` answers for a command of a transaction that failed, is `null` there and an entry of `res.errors` with the index of the command that returned the list.
+An error inside a list, as `EXEC` answers for a command of a transaction that failed, is `null` there and an entry of `res.errors` with the index of the command that returned the list.
 
 When the server refuses the `AUTH` or the `SELECT` of the action, the commands are not sent: `res.results` is empty and `res.errors` has the one error, with the index `-1`.
 
@@ -137,7 +156,7 @@ The action keeps to the guard of the run, and its `action.yml` declares `guard: 
 - Under `--read-only`, a step is run only when every one of its commands is known to only read. Otherwise the whole step is refused before connecting, and the refusal names the command.
 - Under `--allow-host`, the host and the port of `url` must be one the run allows. A URL without a port is taken at `6379`. The action connects to no other host.
 
-A refused step fails with the kind `refused`.
+A refused step fails with the kind `refused`. See [Guard](https://probe.linyo.ws/guide/concepts/guard).
 
 The commands known to only read are these. A command that reads in one form and writes in another, as `SORT` does with `STORE`, is not among them, and nor are scripts and functions, whose effect cannot be told from the command: use the `_RO` form where there is one.
 
