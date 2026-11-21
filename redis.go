@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net"
 	"net/url"
@@ -101,9 +102,7 @@ func forLog(with map[string]any) map[string]any {
 		shown = u.String()
 	}
 	logged := make(map[string]any, len(with))
-	for k, v := range with {
-		logged[k] = v
-	}
+	maps.Copy(logged, with)
 	logged["url"] = shown
 	return logged
 }

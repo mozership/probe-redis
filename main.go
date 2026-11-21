@@ -9,7 +9,7 @@ import (
 )
 
 // version is set at build time.
-var version = "dev"
+var version = "dev" //nolint:unused // set by -X main.version in .goreleaser
 
 func main() {
 	actionrpc.Serve(func(log hclog.Logger) actionrpc.Action {
