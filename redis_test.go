@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"maps"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -381,9 +382,7 @@ func TestRunAuthAndSelect(t *testing.T) {
 			var logged bytes.Buffer
 			a := &Action{log: hclog.New(&hclog.LoggerOptions{Output: &logged, Level: hclog.Trace})}
 			with := map[string]any{"url": tt.url(hostport), "commands": []any{"PING"}}
-			for k, v := range tt.with {
-				with[k] = v
-			}
+			maps.Copy(with, tt.with)
 			ret, err := a.Run(with)
 			if err != nil {
 				t.Fatalf("Run() error = %v", err)
