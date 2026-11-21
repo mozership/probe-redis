@@ -4,9 +4,9 @@ guard: [read-only, allow-host]
 params: [url, username, password, commands, timeout, insecure_skip_tls]
 runs:
   using: binary
-  url: https://github.com/mozership/probe-redis/releases/download/v0.1.1/probe-redis_{os}_{arch}
+  url: https://github.com/mozership/probe-redis/releases/download/v0.1.2/probe-redis_{os}_{arch}
   checksums:
-    darwin_amd64: "25e236f9ea60ff6db4ed1f8bf26d903ed8a492afb54be596783c63cbbc29bd49"
-    darwin_arm64: "fd7869a4ee2f08bc67c8d69fa17404237db07b88e534026b12c468d9bad9aab2"
-    linux_amd64: "d9cd7bbe87a41d1a2f2f86b3ff3df20ef91e3c9538c73ac08b6380fafed75022"
-    linux_arm64: "778112e7c0e05adeaacd05d13bff4ffddde122d91ccac07506eeec996845725b"
+    darwin_amd64: "6357e25a168cd80224252fa7f9368229f1be347bf91924d3e87cbbc67a7c2dfe"
+    darwin_arm64: "e1d90d512082d3c42d5da5fa5d45da7c72fbf7ea6720cd88cc1aab8cd612ba03"
+    linux_amd64: "e6f4018462074421b4c0f504184069f103a05c72554f89e994d17aad349f2b67"
+    linux_arm64: "ca8bbb460161d255683b4fad115c83e22ecce58c6016cc9f0b6912a35b11e0ca"
