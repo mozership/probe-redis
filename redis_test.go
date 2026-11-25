@@ -18,8 +18,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/mozership/probe/actionref"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 // recorded is what a test server saw: the commands sent to it, and how many
@@ -210,7 +209,7 @@ func TestRunResultIsSendable(t *testing.T) {
 	if got := res(ret)["results"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("res.results = %#v, want %#v", got, want)
 	}
-	if _, err := actionrpc.Sendable(ret); err != nil {
+	if _, err := sdk.Sendable(ret); err != nil {
 		t.Errorf("the result cannot be sent to Probe: %v", err)
 	}
 }
@@ -467,7 +466,7 @@ func TestRunSetupRefused(t *testing.T) {
 
 func TestRunReadOnly(t *testing.T) {
 	url, rec := server(t, store())
-	guard := actionrpc.Guard{ReadOnly: true}
+	guard := sdk.Guard{ReadOnly: true}
 
 	// The whole step is refused, the read before the write too, before the
 	// server is connected to.
@@ -483,11 +482,11 @@ func TestRunReadOnly(t *testing.T) {
 		{[]any{"OBJECT FREQ k", "CLIENT KILL ID 3"}, "commands[1] CLIENT KILL is not a command known to only read"},
 	}
 	for _, tt := range tests {
-		_, _, err := (&Action{}).RunStep(actionrpc.Call{
+		_, _, err := (&Action{}).RunStep(sdk.Call{
 			With:  map[string]any{"url": url, "commands": tt.commands},
 			Guard: guard,
 		})
-		if !actionrpc.IsRefused(err) || !strings.Contains(err.Error(), tt.want) {
+		if !sdk.IsRefused(err) || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("RunStep(%v) error = %v, want a refusal containing %q", tt.commands, err, tt.want)
 		}
 	}
@@ -495,7 +494,7 @@ func TestRunReadOnly(t *testing.T) {
 		t.Errorf("a refused step reached the server: %d connections, %v", rec.connected(), rec.got())
 	}
 
-	ret, _, err := (&Action{}).RunStep(actionrpc.Call{
+	ret, _, err := (&Action{}).RunStep(sdk.Call{
 		With:  map[string]any{"url": url, "commands": []any{"PING", "GET k", "MULTI", "GET k", "EXEC"}},
 		Guard: guard,
 	})
@@ -514,15 +513,15 @@ func TestRunAllowHost(t *testing.T) {
 	with := map[string]any{"url": url, "commands": []any{"PING"}}
 
 	for _, allowed := range [][]string{{"127.0.0.1"}, {hostport}, {"example.com", "127.0.0.1:" + port}} {
-		if _, _, err := (&Action{}).RunStep(actionrpc.Call{With: with, Guard: actionrpc.Guard{AllowHosts: allowed}}); err != nil {
+		if _, _, err := (&Action{}).RunStep(sdk.Call{With: with, Guard: sdk.Guard{AllowHosts: allowed}}); err != nil {
 			t.Errorf("RunStep() under %v error = %v", allowed, err)
 		}
 	}
 	connected := rec.connected()
 
 	for _, allowed := range [][]string{{"example.com"}, {"127.0.0.1:1"}, {"localhost"}} {
-		_, _, err := (&Action{}).RunStep(actionrpc.Call{With: with, Guard: actionrpc.Guard{AllowHosts: allowed}})
-		if !actionrpc.IsRefused(err) || !strings.Contains(err.Error(), "the host "+hostport+" is not one the run allows") {
+		_, _, err := (&Action{}).RunStep(sdk.Call{With: with, Guard: sdk.Guard{AllowHosts: allowed}})
+		if !sdk.IsRefused(err) || !strings.Contains(err.Error(), "the host "+hostport+" is not one the run allows") {
 			t.Errorf("RunStep() under %v error = %v, want a refusal naming %s", allowed, err, hostport)
 		}
 	}
@@ -540,15 +539,15 @@ func TestRunDefaultPort(t *testing.T) {
 	}}
 	with := map[string]any{"url": "redis://cache.example.com", "commands": []any{"PING"}}
 
-	_, _, err := a.RunStep(actionrpc.Call{With: with, Guard: actionrpc.Guard{AllowHosts: []string{"cache.example.com:6380"}}})
-	if !actionrpc.IsRefused(err) || !strings.Contains(err.Error(), "cache.example.com:6379") {
+	_, _, err := a.RunStep(sdk.Call{With: with, Guard: sdk.Guard{AllowHosts: []string{"cache.example.com:6380"}}})
+	if !sdk.IsRefused(err) || !strings.Contains(err.Error(), "cache.example.com:6379") {
 		t.Errorf("RunStep() error = %v, want a refusal naming cache.example.com:6379", err)
 	}
 	if len(dialed) != 0 {
 		t.Errorf("a refused step dialed %v", dialed)
 	}
 
-	_, _, err = a.RunStep(actionrpc.Call{With: with, Guard: actionrpc.Guard{AllowHosts: []string{"cache.example.com:6379"}}})
+	_, _, err = a.RunStep(sdk.Call{With: with, Guard: sdk.Guard{AllowHosts: []string{"cache.example.com:6379"}}})
 	if err == nil || !strings.Contains(err.Error(), "connecting to cache.example.com:6379: no server in this test") {
 		t.Errorf("RunStep() error = %v, want the error of the dial", err)
 	}
@@ -600,7 +599,7 @@ func TestRunTimeout(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "commands[1] BLPOP: timed out after 200ms") {
 		t.Errorf("Run() error = %v, want a timeout of commands[1]", err)
 	}
-	if actionrpc.IsRefused(err) {
+	if sdk.IsRefused(err) {
 		t.Errorf("a timeout is not a refusal: %v", err)
 	}
 	if took := time.Since(start); took > 5*time.Second {
@@ -863,7 +862,7 @@ func TestManifestsDeclare(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m, err := actionref.ParseManifest(data)
+		m, err := sdk.ParseManifest(data)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
