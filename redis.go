@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 // DefaultTimeout bounds a step that does not set with.timeout.
@@ -37,7 +37,7 @@ var params = []string{"url", "username", "password", "commands", "timeout", "ins
 // keeps are the kinds of guard the action keeps to, as action.yml declares
 // them: it runs only commands that cannot write under read-only, and
 // connects only to a host the run allows.
-var keeps = []string{actionrpc.KindReadOnly, actionrpc.KindAllowHost}
+var keeps = []string{sdk.KindReadOnly, sdk.KindAllowHost}
 
 // schemes are the schemes of with.url, and whether the connection is over
 // TLS.
@@ -61,7 +61,7 @@ type Action struct {
 
 // Run runs the commands in with, under no guard.
 func (a *Action) Run(with map[string]any) (map[string]any, error) {
-	ret, _, err := a.RunStep(actionrpc.Call{With: with})
+	ret, _, err := a.RunStep(sdk.Call{With: with})
 	return ret, err
 }
 
@@ -69,11 +69,11 @@ func (a *Action) Run(with map[string]any) (map[string]any, error) {
 // the server is connected to, what it answers is a result, an error reply
 // included; only a connection that cannot be made or that fails, a
 // timeout, or a step the guard refuses, is an error.
-func (a *Action) RunStep(call actionrpc.Call) (map[string]any, map[string]any, error) {
+func (a *Action) RunStep(call sdk.Call) (map[string]any, map[string]any, error) {
 	if a.log == nil {
 		a.log = hclog.NewNullLogger()
 	}
-	actionrpc.LogParams(a.log, "received request parameters", forLog(call.With))
+	sdk.LogParams(a.log, "received request parameters", forLog(call.With))
 
 	req, err := parseRequest(call.With)
 	if err != nil {
@@ -83,7 +83,7 @@ func (a *Action) RunStep(call actionrpc.Call) (map[string]any, map[string]any, e
 		return nil, nil, err
 	}
 	ret, err := a.do(req, call.Guard)
-	actionrpc.LogOutcome(a.log, "redis commands", ret, err)
+	sdk.LogOutcome(a.log, "redis commands", ret, err)
 	return ret, nil, err
 }
 
@@ -110,13 +110,13 @@ func forLog(with map[string]any) map[string]any {
 // checkReadOnly returns a Refused error when the run is read-only and the
 // step has a command that is not known to only read. The whole step is
 // refused, before the server is connected to.
-func checkReadOnly(guard actionrpc.Guard, r *request) error {
+func checkReadOnly(guard sdk.Guard, r *request) error {
 	if !guard.ReadOnly {
 		return nil
 	}
 	for i, words := range r.commands {
 		if !readOnly(words) {
-			return actionrpc.Refuse("the run is read-only, and commands[%d] %s is not a command known to only read", i, name(words))
+			return sdk.Refuse("the run is read-only, and commands[%d] %s is not a command known to only read", i, name(words))
 		}
 	}
 	return nil
@@ -425,7 +425,7 @@ func parseTimeout(v any) (time.Duration, error) {
 	}
 }
 
-func (a *Action) do(r *request, guard actionrpc.Guard) (map[string]any, error) {
+func (a *Action) do(r *request, guard sdk.Guard) (map[string]any, error) {
 	// The server named by the URL is the only one the action connects to:
 	// it follows no redirect of a cluster and looks up no other node.
 	if err := guard.CheckHost(r.addr); err != nil {
